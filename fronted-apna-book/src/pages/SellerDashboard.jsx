@@ -10,7 +10,7 @@ export default function SellerDashboard() {
   const [editingId, setEditingId] = useState(null);
   const [draft, setDraft] = useState({ title: '', price: '' });
 
-  const sellerId = user?.email || 'guest@apnabook.com';
+  const sellerId = user?.email || 'guest@pustakly.com';
   const myListings = useMemo(
     () => listings.filter((item) => item.seller === sellerId),
     [listings, sellerId]

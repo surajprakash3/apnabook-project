@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom';
 import Navbar from '../components/Navbar.jsx';
 import Footer from '../components/Footer.jsx';
 import './Signup.css';
+import api from '../lib/api.js';
+import logo from '../assets/logo.png';
 
 export default function Signup() {
   const [formState, setFormState] = useState({
@@ -75,11 +77,21 @@ export default function Signup() {
     return Object.keys(nextErrors).length === 0;
   };
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
     const isValid = validate();
     if (isValid) {
-      setSuccess('Account created successfully. You can log in now.');
+      try {
+        await api.post('/api/auth/register', {
+          name: formState.name.trim(),
+          email: formState.email.trim(),
+          password: formState.password
+        });
+        setSuccess('Account created successfully. You can log in now.');
+        setFormState({ name: '', email: '', password: '', confirmPassword: '' });
+      } catch (error) {
+        setErrors((prev) => ({ ...prev, email: error.message }));
+      }
     }
   };
 
@@ -91,8 +103,9 @@ export default function Signup() {
       <main className="auth-container">
         <section className="auth-card">
           <div className="auth-header">
+            <img className="auth-logo" src={logo} alt="Pustakly logo" />
             <h1>Create your account</h1>
-            <p>Join the ApnaBook community and build your reading list.</p>
+            <p>Join the Pustakly community and build your reading list.</p>
           </div>
 
           <form className="auth-form" onSubmit={handleSubmit} noValidate>

@@ -56,7 +56,7 @@ export default function UserProfile() {
               className="user-portal-input mt-2 w-full rounded-lg border border-[#e8dcd3] px-3 py-2 text-sm"
             />
           ) : (
-            <p className="text-sm font-semibold">{user?.email || 'user@apnabook.com'}</p>
+            <p className="text-sm font-semibold">{user?.email || 'user@pustakly.com'}</p>
           )}
         </div>
         <div className="user-portal-field rounded-xl border border-[#efe5dc] px-4 py-3">

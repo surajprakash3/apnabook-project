@@ -8,8 +8,14 @@ import './Cart.css';
 export default function Cart() {
   const { items, removeItem, updateItemQuantity, clearCart } = useContext(CartContext);
 
+  const formatPrice = (value) => {
+    const raw = typeof value === 'number' ? value : Number.parseFloat(String(value).replace('$', ''));
+    const safe = Number.isFinite(raw) ? raw : 0;
+    return `$${safe.toFixed(2)}`;
+  };
+
   const totalPrice = items.reduce((total, item) => {
-    const rawPrice = typeof item.price === 'number' ? item.price : Number.parseFloat(item.price.replace('$', ''));
+    const rawPrice = typeof item.price === 'number' ? item.price : Number.parseFloat(String(item.price).replace('$', ''));
     const value = Number.isFinite(rawPrice) ? rawPrice : 0;
     const quantity = item.quantity ?? 1;
     return total + value * quantity;
@@ -77,7 +83,7 @@ export default function Cart() {
                   </div>
 
                   <div className="item-price">
-                    <span>{item.price}</span>
+                    <span>{formatPrice(item.price)}</span>
                   </div>
 
                   <button

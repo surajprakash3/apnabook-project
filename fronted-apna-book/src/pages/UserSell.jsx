@@ -45,7 +45,7 @@ export default function UserSell() {
     reader.readAsDataURL(file);
   };
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
     const listing = {
       id: Date.now(),
@@ -58,14 +58,18 @@ export default function UserSell() {
       fileType: form.fileType || 'file',
       previewUrl: form.previewUrl,
       previewEnabled: form.previewEnabled,
-      seller: user?.email || 'guest@apnabook.com',
+      seller: user?.email || 'guest@pustakly.com',
       status: 'Active',
       approvalStatus: 'Approved',
       createdAt: new Date().toISOString().slice(0, 10)
     };
-    addListing(listing);
-    setForm(emptyForm);
-    setStatus('Listing published to marketplace');
+    try {
+      await addListing(listing);
+      setForm(emptyForm);
+      setStatus('Listing published to marketplace');
+    } catch (error) {
+      setStatus('Upload failed. Please try again.');
+    }
   };
 
   return (

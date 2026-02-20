@@ -31,6 +31,14 @@
   color: var(--dark);
 }
 
+.auth-logo {
+  width: 54px;
+  height: 54px;
+  border-radius: 16px;
+  box-shadow: 0 0 18px rgba(78, 214, 255, 0.35);
+  margin-bottom: 0.8rem;
+}
+
 .auth-header p {
   margin: 0 0 1.6rem 0;
   color: var(--dark);

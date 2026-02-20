@@ -39,7 +39,7 @@ const marketplaceSeed = [
     type: 'Physical Books',
     fileType: 'physical',
     previewUrl: '',
-    seller: 'reader@apnabook.com',
+    seller: 'reader@pustakly.com',
     status: 'Active',
     approvalStatus: 'Approved',
     createdAt: '2026-01-22'

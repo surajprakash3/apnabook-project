@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import './Navbar.css';
 import { CartContext } from '../context/CartContext.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
+import logo from '../assets/logo.png';
 
 export default function Navbar() {
   const [open, setOpen] = useState(false);
@@ -42,8 +43,8 @@ export default function Navbar() {
     <header className="navbar">
       <div className="navbar-container">
         <Link to="/" className="logo">
-          <span className="logo-icon">📚</span>
-          ApnaBook
+          <img className="logo-icon" src={logo} alt="Pustakly logo" />
+          Pustakly
         </Link>
         
         <nav className="nav-links">

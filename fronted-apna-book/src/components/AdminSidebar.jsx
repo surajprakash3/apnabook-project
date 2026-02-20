@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import './AdminSidebar.css';
+import logo from '../assets/logo.png';
 import { useAuth } from '../context/AuthContext.jsx';
 
 const navItems = [
@@ -61,10 +62,10 @@ export default function AdminSidebar() {
       >
         <div className={`flex items-center justify-between px-6 py-6 ${isCollapsed ? 'lg:px-4' : ''}`}>
           <div className={`flex items-center gap-3 ${isCollapsed ? 'lg:justify-center' : ''}`}>
-            <span className="text-3xl">📚</span>
+            <img className="admin-logo" src={logo} alt="Pustakly logo" />
             {showLabels && (
               <div>
-                <p className="text-lg font-semibold">ApnaBook</p>
+                <p className="text-lg font-semibold">Pustakly</p>
                 <span className="text-xs text-white/60">Admin Console</span>
               </div>
             )}

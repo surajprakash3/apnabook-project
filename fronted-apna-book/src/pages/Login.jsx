@@ -4,6 +4,8 @@ import Navbar from '../components/Navbar.jsx';
 import Footer from '../components/Footer.jsx';
 import './Login.css';
 import { useAuth } from '../context/AuthContext.jsx';
+import api from '../lib/api.js';
+import logo from '../assets/logo.png';
 
 export default function Login() {
   const [formState, setFormState] = useState({ email: '', password: '' });
@@ -52,24 +54,31 @@ export default function Login() {
     return Object.keys(nextErrors).length === 0;
   };
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
     const isValid = validate();
 
     if (isValid) {
-      setSuccess('Login successful. Welcome back!');
-      const email = formState.email.trim();
-      const role = email.toLowerCase().includes('admin') ? 'admin' : 'user';
-      login({ email, role, signedInAt: Date.now() });
-      if (rememberMe) {
-        localStorage.setItem('apnabook_remember_email', formState.email.trim());
-      } else {
-        localStorage.removeItem('apnabook_remember_email');
-      }
+      try {
+        const email = formState.email.trim();
+        const password = formState.password;
+        const result = await api.post('/api/auth/login', { email, password });
 
-      const fallback = role === 'admin' ? '/admin/dashboard' : '/user/dashboard';
-      const destination = location.state?.from?.pathname || fallback;
-      navigate(destination, { replace: true });
+        setSuccess('Login successful. Welcome back!');
+        login({ user: result.user, token: result.token });
+        if (rememberMe) {
+          localStorage.setItem('apnabook_remember_email', formState.email.trim());
+        } else {
+          localStorage.removeItem('apnabook_remember_email');
+        }
+
+        const fallback = result.user.role === 'admin' ? '/admin/dashboard' : '/user/dashboard';
+        const destination = location.state?.from?.pathname || fallback;
+        navigate(destination, { replace: true });
+      } catch (error) {
+        setErrors((prev) => ({ ...prev, form: error.message }));
+        setSuccess('');
+      }
     }
   };
 
@@ -79,12 +88,14 @@ export default function Login() {
       <main className="auth-container">
         <section className="auth-card">
           <div className="auth-header">
+            <img className="auth-logo" src={logo} alt="Pustakly logo" />
             <h1>Welcome back</h1>
             <p>Log in to track orders and keep your library synced.</p>
           </div>
 
           <form className="auth-form" onSubmit={handleSubmit} noValidate>
             {success && <div className="success-banner">{success}</div>}
+            {errors.form && <div className="error-banner">{errors.form}</div>}
             <div className={`input-group ${errors.email ? 'invalid' : ''}`}>
               <label htmlFor="email">Email</label>
               <input

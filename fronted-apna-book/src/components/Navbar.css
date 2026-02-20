@@ -36,8 +36,11 @@
 }
 
 .logo-icon {
-  font-size: 1.75rem;
+  width: 36px;
+  height: 36px;
+  border-radius: 50px;
   animation: book-bounce 2s ease-in-out infinite;
+  filter: drop-shadow(0 0 10px rgba(78, 214, 255, 0.4));
 }
 
 @keyframes book-bounce {

@@ -5,7 +5,7 @@ export default function Footer() {
     <footer className="footer">
       <div className="footer-top">
         <div>
-          <h3>ApnaBook</h3>
+          <h3>Pustakly</h3>
           <p>Modern reads with a thoughtful curation lens.</p>
         </div>
         <div className="footer-links">
@@ -30,7 +30,7 @@ export default function Footer() {
         </div>
       </div>
       <div className="footer-bottom">
-        <span>© 2026 ApnaBook. All rights reserved.</span>
+        <span>© 2026 Pustakly. All rights reserved.</span>
         <div className="socials">
           <a href="#">Instagram</a>
           <a href="#">X</a>
