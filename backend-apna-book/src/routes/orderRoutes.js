@@ -12,6 +12,6 @@ const router = express.Router();
 
 router.post('/', requireAuth, createOrder);
 router.get('/', requireAuth, listMyOrders);
-router.put('/:id/status', requireAuth, requireRole('admin'), updateOrderStatus);
+router.patch('/:id/status', requireAuth, requireRole('admin'), updateOrderStatus);
 
 module.exports = router;

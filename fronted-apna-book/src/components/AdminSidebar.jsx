@@ -18,7 +18,7 @@ const getActiveItem = (pathname) => navItems.find((item) => item.to === pathname
 export default function AdminSidebar() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { logout } = useAuth();
+  const { logout, user } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const activeItem = useMemo(() => getActiveItem(location.pathname), [location.pathname]);
@@ -45,7 +45,14 @@ export default function AdminSidebar() {
           <p className="text-sm font-semibold">{activeItem?.label ?? 'Dashboard'}</p>
         </div>
         <div className="grid h-9 w-9 place-items-center rounded-full bg-white/10 text-xs font-semibold">
-          AP
+          {user?.name
+            ? user.name
+                .split(' ')
+                .map((part) => part[0])
+                .slice(0, 2)
+                .join('')
+                .toUpperCase()
+            : 'AD'}
         </div>
       </div>
 

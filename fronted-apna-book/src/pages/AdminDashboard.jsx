@@ -1,35 +1,78 @@
+import { useEffect, useMemo, useState } from 'react';
+import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis, Bar, BarChart } from 'recharts';
 import AdminSidebar from '../components/AdminSidebar';
+import api from '../lib/api.js';
+import { useAuth } from '../context/AuthContext.jsx';
 
-const stats = [
-  { label: 'Revenue', value: '$82.6k', trend: '+14.2%', icon: '💸' },
-  { label: 'Orders', value: '2,941', trend: '+9.8%', icon: '🧾' },
-  { label: 'Users', value: '18.4k', trend: '+4.1%', icon: '👥' }
-];
+const currency = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
 
-const salesSeries = [24, 28, 26, 32, 35, 40, 38, 44, 48, 52, 50, 60];
-const ordersSeries = [18, 22, 20, 24, 28, 30, 26, 32, 34, 36, 33, 40];
-
-const buildLinePoints = (values, width, height, padding) => {
-  const max = Math.max(...values);
-  const min = Math.min(...values);
-  return values
-    .map((value, index) => {
-      const x = padding + (index * (width - padding * 2)) / (values.length - 1);
-      const y =
-        height -
-        padding -
-        ((value - min) / (max - min || 1)) * (height - padding * 2);
-      return `${x},${y}`;
-    })
-    .join(' ');
-};
+const toPercent = (value) => `${value >= 0 ? '+' : ''}${value.toFixed(1)}%`;
 
 export default function AdminDashboard() {
-  const chartWidth = 480;
-  const chartHeight = 180;
-  const chartPadding = 16;
-  const linePoints = buildLinePoints(salesSeries, chartWidth, chartHeight, chartPadding);
-  const lineArea = `${linePoints} ${chartWidth - chartPadding},${chartHeight - chartPadding} ${chartPadding},${chartHeight - chartPadding}`;
+  const { token, user } = useAuth();
+  const [summary, setSummary] = useState(null);
+  const [sales, setSales] = useState([]);
+  const [orders, setOrders] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let active = true;
+
+    const loadAnalytics = async () => {
+      if (!token) return;
+      setLoading(true);
+      setError('');
+      try {
+        const [summaryRes, salesRes, ordersRes] = await Promise.all([
+          api.get('/api/admin/analytics/summary', { token }),
+          api.get('/api/admin/analytics/monthly-sales', { token }),
+          api.get('/api/admin/analytics/monthly-orders', { token })
+        ]);
+
+        if (!active) return;
+        setSummary(summaryRes);
+        setSales(Array.isArray(salesRes) ? salesRes : []);
+        setOrders(Array.isArray(ordersRes) ? ordersRes : []);
+      } catch (requestError) {
+        if (!active) return;
+        setError(requestError.message || 'Failed to load analytics');
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+
+    loadAnalytics();
+    const refreshId = setInterval(loadAnalytics, 60000);
+    return () => {
+      active = false;
+      clearInterval(refreshId);
+    };
+  }, [token]);
+
+  const cards = useMemo(() => {
+    if (!summary) return [];
+    return [
+      {
+        label: 'Revenue',
+        value: currency.format(summary.totalRevenue || 0),
+        trend: toPercent(summary.revenueGrowth || 0),
+        icon: '💸'
+      },
+      {
+        label: 'Orders',
+        value: summary.totalOrders ?? 0,
+        trend: toPercent(summary.ordersGrowth || 0),
+        icon: '🧾'
+      },
+      {
+        label: 'Users',
+        value: summary.totalUsers ?? 0,
+        trend: toPercent(summary.usersGrowth || 0),
+        icon: '👥'
+      }
+    ];
+  }, [summary]);
 
   return (
     <div className="admin-analytics min-h-screen bg-[#f5f2ed] text-[#1d1b19] lg:grid lg:grid-cols-[auto_1fr]">
@@ -49,9 +92,16 @@ export default function AdminDashboard() {
               New Report
             </button>
             <div className="flex items-center gap-3 rounded-full bg-white px-3 py-2 shadow-sm">
-              <span className="text-sm font-semibold">Asha Patel</span>
+              <span className="text-sm font-semibold">{user?.name || 'Admin'}</span>
               <div className="grid h-9 w-9 place-items-center rounded-full bg-[#1d1b19] text-xs font-semibold text-white">
-                AP
+                {user?.name
+                  ? user.name
+                      .split(' ')
+                      .map((part) => part[0])
+                      .slice(0, 2)
+                      .join('')
+                      .toUpperCase()
+                  : 'AD'}
               </div>
             </div>
           </div>
@@ -59,7 +109,17 @@ export default function AdminDashboard() {
 
         <main className="flex flex-col gap-8 px-6 py-8">
           <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-            {stats.map((card, index) => (
+            {loading && (
+              <div className="col-span-full rounded-2xl bg-white p-6 text-sm text-[#6f6861] shadow">
+                Loading analytics...
+              </div>
+            )}
+            {error && (
+              <div className="col-span-full rounded-2xl bg-[#fff3f0] p-6 text-sm font-semibold text-[#a53f30] shadow">
+                {error}
+              </div>
+            )}
+            {!loading && !error && cards.map((card, index) => (
               <article
                 key={card.label}
                 className={`rounded-2xl p-5 text-white shadow-[0_18px_36px_rgba(0,0,0,0.15)] transition hover:-translate-y-1 ${
@@ -91,40 +151,19 @@ export default function AdminDashboard() {
                   <h3 className="text-lg font-semibold">Sales</h3>
                   <p className="analytics-muted text-xs text-[#7a726b]">Monthly revenue trend</p>
                 </div>
-                <span className="rounded-full bg-[#ffedd5] px-3 py-1 text-xs font-semibold text-[#c2410c]">+18%</span>
+                <span className="rounded-full bg-[#ffedd5] px-3 py-1 text-xs font-semibold text-[#c2410c]">
+                  {summary ? toPercent(summary.revenueGrowth || 0) : '+0.0%'}
+                </span>
               </div>
-              <div className="mt-6 overflow-x-auto">
-                <svg
-                  viewBox={`0 0 ${chartWidth} ${chartHeight}`}
-                  className="h-52 w-full min-w-[420px]"
-                  role="img"
-                  aria-label="Sales line chart"
-                >
-                  <defs>
-                    <linearGradient id="salesGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#f97316" stopOpacity="0.4" />
-                      <stop offset="100%" stopColor="#f97316" stopOpacity="0" />
-                    </linearGradient>
-                  </defs>
-                  <polygon points={lineArea} fill="url(#salesGradient)" />
-                  <polyline
-                    points={linePoints}
-                    fill="none"
-                    stroke="#f97316"
-                    strokeWidth="3"
-                    strokeLinejoin="round"
-                    strokeLinecap="round"
-                  />
-                  {linePoints.split(' ').map((point, index) => {
-                    const [x, y] = point.split(',');
-                    return <circle key={`point-${index}`} cx={x} cy={y} r="4" fill="#fb7185" />;
-                  })}
-                </svg>
-              </div>
-              <div className="mt-3 grid grid-cols-6 text-center text-xs text-[#7a726b]">
-                {['Jan', 'Mar', 'May', 'Jul', 'Sep', 'Nov'].map((month) => (
-                  <span key={month}>{month}</span>
-                ))}
+              <div className="mt-6 h-56">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={sales}>
+                    <XAxis dataKey="month" tick={{ fontSize: 10 }} />
+                    <YAxis tick={{ fontSize: 10 }} />
+                    <Tooltip />
+                    <Line type="monotone" dataKey="revenue" stroke="#f97316" strokeWidth={3} />
+                  </LineChart>
+                </ResponsiveContainer>
               </div>
             </article>
 
@@ -135,25 +174,19 @@ export default function AdminDashboard() {
                     <h3 className="text-lg font-semibold">Orders</h3>
                     <p className="analytics-muted text-xs text-[#7a726b]">Monthly volume</p>
                   </div>
-                  <span className="rounded-full bg-[#dbeafe] px-3 py-1 text-xs font-semibold text-[#1d4ed8]">+9%</span>
+                  <span className="rounded-full bg-[#dbeafe] px-3 py-1 text-xs font-semibold text-[#1d4ed8]">
+                    {summary ? toPercent(summary.ordersGrowth || 0) : '+0.0%'}
+                  </span>
                 </div>
-                <div className="mt-6 grid h-40 grid-cols-12 items-end gap-2">
-                  {ordersSeries.map((value, index) => (
-                    <div
-                      key={`orders-${index}`}
-                      className={`rounded-t-2xl transition ${
-                        index === ordersSeries.length - 1
-                          ? 'bg-gradient-to-t from-[#3b82f6] to-[#60a5fa]'
-                          : 'bg-[#e2e8f0]'
-                      }`}
-                      style={{ height: `${(value / 40) * 100}%` }}
-                    ></div>
-                  ))}
-                </div>
-                <div className="mt-3 grid grid-cols-12 text-center text-[0.65rem] text-[#7a726b]">
-                  {['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'].map((month) => (
-                    <span key={month}>{month}</span>
-                  ))}
+                <div className="mt-6 h-44">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={orders}>
+                      <XAxis dataKey="month" tick={{ fontSize: 10 }} />
+                      <YAxis tick={{ fontSize: 10 }} />
+                      <Tooltip />
+                      <Bar dataKey="orders" fill="#3b82f6" radius={[8, 8, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
                 </div>
               </article>
 
@@ -161,15 +194,15 @@ export default function AdminDashboard() {
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <h3 className="text-lg font-semibold">Monthly Summary</h3>
-                    <p className="analytics-muted text-xs text-[#7a726b]">February snapshot</p>
+                    <p className="analytics-muted text-xs text-[#7a726b]">Current month snapshot</p>
                   </div>
                   <span className="rounded-full bg-[#dcfce7] px-3 py-1 text-xs font-semibold text-[#166534]">On track</span>
                 </div>
                 <ul className="mt-4 space-y-4 text-sm">
                   {[
-                    ['Net Revenue', '$48.6k', 78],
-                    ['Repeat Customers', '36%', 62],
-                    ['Fulfillment Time', '1.9 days', 84]
+                    ['Net Revenue', currency.format(summary?.monthlySummary?.netRevenue || 0), 78],
+                    ['Repeat Customers', `${summary?.monthlySummary?.repeatCustomers || 0}%`, 62],
+                    ['Fulfillment Time', `${summary?.monthlySummary?.fulfillmentDays || 0} days`, 84]
                   ].map(([label, value, percent]) => (
                     <li key={label}>
                       <div className="flex items-center justify-between">

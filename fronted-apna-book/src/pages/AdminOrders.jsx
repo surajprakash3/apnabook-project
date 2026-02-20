@@ -1,62 +1,8 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import AdminSidebar from '../components/AdminSidebar';
+import api from '../lib/api.js';
+import { useAuth } from '../context/AuthContext.jsx';
 import './AdminOrders.css';
-
-const initialOrders = [
-  {
-    id: 'AB-4821',
-    customer: {
-      name: 'Harper Blake',
-      email: 'harper.blake@email.com'
-    },
-    seller: {
-      name: 'Studio North',
-      email: 'studio@north.io'
-    },
-    items: [
-      { title: 'The Midnight Garden', quantity: 1 },
-      { title: 'Atlas of Light', quantity: 2 }
-    ],
-    total: 72.4,
-    status: 'Shipped',
-    date: 'Feb 10, 2026'
-  },
-  {
-    id: 'AB-4818',
-    customer: {
-      name: 'Miguel Santos',
-      email: 'miguel.s@email.com'
-    },
-    seller: {
-      name: 'Linea Studio',
-      email: 'linea@design.co'
-    },
-    items: [
-      { title: 'Velocity & Velvet', quantity: 1 }
-    ],
-    total: 45.1,
-    status: 'Processing',
-    date: 'Feb 09, 2026'
-  },
-  {
-    id: 'AB-4812',
-    customer: {
-      name: 'Asha Patel',
-      email: 'asha.patel@email.com'
-    },
-    seller: {
-      name: 'DataLab',
-      email: 'team@datalab.ai'
-    },
-    items: [
-      { title: 'Shadow Protocol', quantity: 1 },
-      { title: 'Digital Minimalism', quantity: 1 }
-    ],
-    total: 128.8,
-    status: 'Delivered',
-    date: 'Feb 08, 2026'
-  }
-];
 
 const statusStyles = {
   Processing: 'bg-[#dbeafe] text-[#1d4ed8]',
@@ -66,15 +12,63 @@ const statusStyles = {
 };
 
 const statusOptions = ['Processing', 'Shipped', 'Delivered', 'Cancelled'];
+const statusQueryMap = {
+  Processing: 'processing',
+  Shipped: 'shipped',
+  Delivered: 'delivered',
+  Cancelled: 'cancelled'
+};
+
+const formatDate = (value) => {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleDateString(undefined, { month: 'short', day: '2-digit', year: 'numeric' });
+};
 
 export default function AdminOrders() {
-  const [orders, setOrders] = useState(initialOrders);
+  const { token } = useAuth();
+  const [orders, setOrders] = useState([]);
+  const [statusFilter, setStatusFilter] = useState('All');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  const updateStatus = (id, status) => {
+  const loadOrders = useCallback(async () => {
+    if (!token) return;
+    setLoading(true);
+    setError('');
+    try {
+      const query = statusFilter !== 'All' ? `?status=${statusQueryMap[statusFilter]}` : '';
+      const data = await api.get(`/api/admin/orders${query}`, { token });
+      setOrders(Array.isArray(data) ? data : []);
+    } catch (requestError) {
+      setError(requestError.message || 'Failed to load orders');
+    } finally {
+      setLoading(false);
+    }
+  }, [token, statusFilter]);
+
+  useEffect(() => {
+    loadOrders();
+  }, [loadOrders]);
+
+  const updateStatus = async (id, status) => {
     setOrders((prev) =>
       prev.map((order) => (order.id === id ? { ...order, status } : order))
     );
+
+    try {
+      const updated = await api.patch(`/api/admin/orders/${id}/status`, { status }, { token });
+      setOrders((prev) =>
+        prev.map((order) => (order.id === id ? { ...order, ...updated } : order))
+      );
+    } catch (requestError) {
+      setError(requestError.message || 'Failed to update order status');
+      loadOrders();
+    }
   };
+
+  const recentCount = useMemo(() => orders.length, [orders]);
 
   return (
     <div className="admin-shell admin-orders-page min-h-screen bg-[#f6f3ee] text-[#1d1b19] lg:grid lg:grid-cols-[auto_1fr]">
@@ -88,21 +82,28 @@ export default function AdminOrders() {
               Orders
             </p>
             <h1 className="text-3xl font-semibold">Manage Orders</h1>
-            <p className="text-sm text-[#6f6861]">{orders.length} recent orders</p>
+            <p className="text-sm text-[#6f6861]">{recentCount} recent orders</p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <button
               className="rounded-full border border-[#d9cfc6] px-4 py-2 text-sm font-semibold"
               type="button"
+              onClick={loadOrders}
             >
-              Export
+              Refresh
             </button>
-            <button
-              className="rounded-full bg-[#1d1b19] px-5 py-2 text-sm font-semibold text-white"
-              type="button"
+            <select
+              className="rounded-full border border-[#d9cfc6] bg-white px-5 py-2 text-sm font-semibold"
+              value={statusFilter}
+              onChange={(event) => setStatusFilter(event.target.value)}
             >
-              Filter Status
-            </button>
+              <option value="All">All Status</option>
+              {statusOptions.map((status) => (
+                <option key={status} value={status}>
+                  {status}
+                </option>
+              ))}
+            </select>
           </div>
         </header>
 
@@ -122,6 +123,21 @@ export default function AdminOrders() {
           </div>
 
           <div className="space-y-4">
+            {loading && (
+              <div className="rounded-2xl border border-[#f3e8de] bg-[#fffaf6] p-5 text-sm text-[#6f6861]">
+                Loading orders...
+              </div>
+            )}
+            {error && (
+              <div className="rounded-2xl border border-[#f4b4ad] bg-[#fff1ef] p-5 text-sm font-semibold text-[#a53f30]">
+                {error}
+              </div>
+            )}
+            {!loading && !error && orders.length === 0 && (
+              <div className="rounded-2xl border border-[#f3e8de] bg-[#fffaf6] p-5 text-sm text-[#6f6861]">
+                No orders found for this filter.
+              </div>
+            )}
             {orders.map((order) => (
               <div
                 key={order.id}
@@ -130,15 +146,15 @@ export default function AdminOrders() {
                 <div className="flex flex-wrap items-start justify-between gap-4">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.15em] text-[#a88874]">
-                      Order #{order.id}
+                      Order #{order.orderId}
                     </p>
-                    <h3 className="text-lg font-semibold">{order.customer.name}</h3>
-                    <p className="text-sm text-[#6f6861]">{order.customer.email}</p>
+                    <h3 className="text-lg font-semibold">{order.buyer?.name}</h3>
+                    <p className="text-sm text-[#6f6861]">{order.buyer?.email}</p>
                   </div>
                   <div className="text-right">
                     <p className="text-xs uppercase tracking-[0.15em] text-[#a88874]">Total</p>
-                    <p className="text-lg font-semibold">${order.total.toFixed(2)}</p>
-                    <p className="text-xs text-[#6f6861]">{order.date}</p>
+                    <p className="text-lg font-semibold">${Number(order.total || 0).toFixed(2)}</p>
+                    <p className="text-xs text-[#6f6861]">{formatDate(order.date)}</p>
                   </div>
                 </div>
 
@@ -158,8 +174,8 @@ export default function AdminOrders() {
                   <div className="flex flex-col gap-3">
                     <div className="rounded-xl border border-[#efe5dc] px-4 py-3">
                       <p className="text-xs uppercase tracking-[0.15em] text-[#a88874]">Seller</p>
-                      <p className="text-sm font-semibold">{order.seller.name}</p>
-                      <p className="text-xs text-[#6f6861]">{order.seller.email}</p>
+                      <p className="text-sm font-semibold">{order.seller?.name}</p>
+                      <p className="text-xs text-[#6f6861]">{order.seller?.email}</p>
                     </div>
                     <div>
                       <p className="text-sm font-semibold">Status</p>

@@ -1,5 +1,35 @@
 const { ObjectId } = require('mongodb');
 
+const normalizeStatus = (value) => {
+  if (!value) return null;
+  const key = String(value).toLowerCase();
+  const mapping = {
+    processing: 'Processing',
+    shipped: 'Shipped',
+    delivered: 'Delivered',
+    completed: 'Delivered',
+    cancelled: 'Cancelled',
+    canceled: 'Cancelled'
+  };
+  return mapping[key] || null;
+};
+
+const mapOrderRow = (order) => ({
+  id: String(order._id),
+  orderId: String(order._id),
+  buyer: order.buyer || { name: 'Unknown', email: '' },
+  seller: order.seller || { name: 'Unknown', email: '' },
+  items: Array.isArray(order.items)
+    ? order.items.map((item) => ({
+        title: item.title || item.name || 'Untitled',
+        quantity: Number(item.quantity || 1)
+      }))
+    : [],
+  total: Number(order.total || 0),
+  status: normalizeStatus(order.status) || order.status || 'Processing',
+  date: order.createdAt
+});
+
 const createOrder = async (req, res) => {
   const db = req.app.locals.db;
   const buyerId = new ObjectId(req.user.id);
@@ -43,9 +73,12 @@ const createOrder = async (req, res) => {
 
 const listOrders = async (req, res) => {
   const db = req.app.locals.db;
+  const statusFilter = normalizeStatus(req.query.status);
+  const matchStage = statusFilter ? { status: statusFilter } : {};
   const orders = await db
     .collection('orders')
     .aggregate([
+      { $match: matchStage },
       { $sort: { createdAt: -1 } },
       {
         $lookup: {
@@ -83,7 +116,7 @@ const listOrders = async (req, res) => {
     ])
     .toArray();
 
-  return res.json(orders);
+  return res.json(orders.map(mapOrderRow));
 };
 
 const listMyOrders = async (req, res) => {
@@ -121,15 +154,21 @@ const listMyOrders = async (req, res) => {
 
 const updateOrderStatus = async (req, res) => {
   const db = req.app.locals.db;
-  const { status } = req.body;
+  const normalizedStatus = normalizeStatus(req.body?.status);
+  if (!normalizedStatus) {
+    return res.status(400).json({ message: 'Invalid status' });
+  }
   await db
     .collection('orders')
-    .updateOne({ _id: new ObjectId(req.params.id) }, { $set: { status, updatedAt: new Date() } });
+    .updateOne(
+      { _id: new ObjectId(req.params.id) },
+      { $set: { status: normalizedStatus, updatedAt: new Date() } }
+    );
   const order = await db.collection('orders').findOne({ _id: new ObjectId(req.params.id) });
   if (!order) {
     return res.status(404).json({ message: 'Order not found' });
   }
-  return res.json(order);
+  return res.json(mapOrderRow(order));
 };
 
 module.exports = { createOrder, listOrders, listMyOrders, updateOrderStatus };

@@ -66,11 +66,28 @@ export default function Signup() {
     const nextErrors = {};
 
     if (mode === 'otpRequest') {
+      if (!formState.name.trim()) {
+        nextErrors.name = 'Full name is required.';
+      }
+
       if (!formState.email.trim()) {
         nextErrors.email = 'Email is required.';
       } else if (!/\S+@\S+\.\S+/.test(formState.email)) {
         nextErrors.email = 'Enter a valid email address.';
       }
+
+      if (!formState.password.trim()) {
+        nextErrors.password = 'Password is required.';
+      } else if (formState.password.length < 6) {
+        nextErrors.password = 'Password must be at least 6 characters.';
+      }
+
+      if (!formState.confirmPassword.trim()) {
+        nextErrors.confirmPassword = 'Confirm your password.';
+      } else if (formState.confirmPassword !== formState.password) {
+        nextErrors.confirmPassword = 'Passwords do not match.';
+      }
+
       setErrors(nextErrors);
       return Object.keys(nextErrors).length === 0;
     }
@@ -112,8 +129,10 @@ export default function Signup() {
     if (!isValid || otpCooldownSeconds > 0) return;
 
     try {
-      await api.post('/api/auth/register/otp', {
-        email: formState.email.trim()
+      await api.post('/api/auth/request-otp', {
+        fullName: formState.name.trim(),
+        email: formState.email.trim(),
+        password: formState.password
       });
       setOtpCooldownSeconds(5 * 60);
       setSuccess('OTP sent to your email. It is valid for 5 minutes.');
@@ -138,10 +157,8 @@ export default function Signup() {
     const isValid = validate('submit');
     if (isValid) {
       try {
-        const result = await api.post('/api/auth/register', {
-          name: formState.name.trim(),
+        const result = await api.post('/api/auth/verify-otp', {
           email: formState.email.trim(),
-          password: formState.password,
           otp: formState.otp.trim()
         });
         login({ user: result.user, token: result.token });

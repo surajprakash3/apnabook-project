@@ -9,8 +9,11 @@ import logo from '../assets/logo.png';
 
 export default function Login() {
   const [formState, setFormState] = useState({ email: '', password: '' });
+  const [resetState, setResetState] = useState({ otp: '', newPassword: '', confirmPassword: '' });
   const [errors, setErrors] = useState({});
   const [success, setSuccess] = useState('');
+  const [resetMode, setResetMode] = useState(false);
+  const [resetCooldownSeconds, setResetCooldownSeconds] = useState(0);
   const [rememberMe, setRememberMe] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const navigate = useNavigate();
@@ -25,9 +28,25 @@ export default function Login() {
     }
   }, []);
 
+  useEffect(() => {
+    if (resetCooldownSeconds <= 0) return undefined;
+    const timer = setInterval(() => {
+      setResetCooldownSeconds((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [resetCooldownSeconds]);
+
   const handleChange = (event) => {
     const { name, value } = event.target;
     setFormState((prev) => ({ ...prev, [name]: value }));
+    setSuccess('');
+    setErrors((prev) => ({ ...prev, [name]: '' }));
+  };
+
+  const handleResetChange = (event) => {
+    const { name, value } = event.target;
+    setResetState((prev) => ({ ...prev, [name]: value }));
+    setErrors((prev) => ({ ...prev, [name]: '' }));
     setSuccess('');
   };
 
@@ -80,6 +99,86 @@ export default function Login() {
         setSuccess('');
       }
     }
+  };
+
+  const validateResetRequest = () => {
+    const nextErrors = {};
+    if (!formState.email.trim()) {
+      nextErrors.email = 'Email is required.';
+    } else if (!/\S+@\S+\.\S+/.test(formState.email)) {
+      nextErrors.email = 'Enter a valid email address.';
+    }
+    setErrors(nextErrors);
+    return Object.keys(nextErrors).length === 0;
+  };
+
+  const validateResetSubmit = () => {
+    const nextErrors = {};
+    if (!resetState.otp.trim()) {
+      nextErrors.otp = 'OTP is required.';
+    } else if (!/^\d{6}$/.test(resetState.otp.trim())) {
+      nextErrors.otp = 'OTP must be 6 digits.';
+    }
+
+    if (!resetState.newPassword.trim()) {
+      nextErrors.newPassword = 'New password is required.';
+    } else if (resetState.newPassword.length < 6) {
+      nextErrors.newPassword = 'Password must be at least 6 characters.';
+    }
+
+    if (resetState.confirmPassword !== resetState.newPassword) {
+      nextErrors.confirmPassword = 'Passwords do not match.';
+    }
+
+    setErrors(nextErrors);
+    return Object.keys(nextErrors).length === 0;
+  };
+
+  const handleForgotPasswordRequest = async () => {
+    if (!validateResetRequest() || resetCooldownSeconds > 0) return;
+
+    try {
+      await api.post('/api/auth/forgot-password/request-otp', { email: formState.email.trim() });
+      setSuccess('Password reset OTP sent to your email.');
+      setResetMode(true);
+      setResetCooldownSeconds(5 * 60);
+    } catch (error) {
+      const retryAfterSeconds = Number(error?.data?.retryAfterSeconds || 0);
+      if (retryAfterSeconds > 0) {
+        setResetCooldownSeconds(retryAfterSeconds);
+        setResetMode(true);
+        setErrors((prev) => ({
+          ...prev,
+          form: 'OTP already sent. Enter the OTP from your email or wait to resend.'
+        }));
+        return;
+      }
+      setErrors((prev) => ({ ...prev, form: error.message }));
+    }
+  };
+
+  const handleResetSubmit = async (event) => {
+    event.preventDefault();
+    if (!validateResetSubmit()) return;
+
+    try {
+      await api.post('/api/auth/forgot-password/reset', {
+        email: formState.email.trim(),
+        otp: resetState.otp.trim(),
+        newPassword: resetState.newPassword
+      });
+      setSuccess('Password reset successful. You can now log in.');
+      setResetMode(false);
+      setResetState({ otp: '', newPassword: '', confirmPassword: '' });
+    } catch (error) {
+      setErrors((prev) => ({ ...prev, form: error.message }));
+    }
+  };
+
+  const formatSeconds = (seconds) => {
+    const minutes = Math.floor(seconds / 60);
+    const remaining = seconds % 60;
+    return `${String(minutes).padStart(2, '0')}:${String(remaining).padStart(2, '0')}`;
   };
 
   return (
@@ -153,7 +252,7 @@ export default function Login() {
                 />
                 Remember me
               </label>
-              <button type="button" className="link-btn">
+              <button type="button" className="link-btn" onClick={handleForgotPasswordRequest}>
                 Forgot password?
               </button>
             </div>
@@ -162,6 +261,70 @@ export default function Login() {
               Log in
             </button>
           </form>
+
+          {resetMode && (
+            <form className="auth-form" onSubmit={handleResetSubmit} noValidate>
+              <div className={`input-group ${errors.otp ? 'invalid' : ''}`}>
+                <label htmlFor="otp">Reset OTP</label>
+                <input
+                  id="otp"
+                  name="otp"
+                  type="text"
+                  maxLength={6}
+                  value={resetState.otp}
+                  onChange={handleResetChange}
+                  placeholder="Enter 6-digit OTP"
+                />
+                {errors.otp && <span className="error-text">{errors.otp}</span>}
+              </div>
+
+              <div className={`input-group ${errors.newPassword ? 'invalid' : ''}`}>
+                <label htmlFor="newPassword">New Password</label>
+                <input
+                  id="newPassword"
+                  name="newPassword"
+                  type="password"
+                  value={resetState.newPassword}
+                  onChange={handleResetChange}
+                  placeholder="At least 6 characters"
+                />
+                {errors.newPassword && <span className="error-text">{errors.newPassword}</span>}
+              </div>
+
+              <div className={`input-group ${errors.confirmPassword ? 'invalid' : ''}`}>
+                <label htmlFor="confirmPassword">Confirm New Password</label>
+                <input
+                  id="confirmPassword"
+                  name="confirmPassword"
+                  type="password"
+                  value={resetState.confirmPassword}
+                  onChange={handleResetChange}
+                  placeholder="Re-enter new password"
+                />
+                {errors.confirmPassword && <span className="error-text">{errors.confirmPassword}</span>}
+              </div>
+
+              <div className="form-row">
+                <button
+                  type="button"
+                  className="link-btn"
+                  onClick={handleForgotPasswordRequest}
+                  disabled={resetCooldownSeconds > 0}
+                >
+                  {resetCooldownSeconds > 0
+                    ? `Resend OTP in ${formatSeconds(resetCooldownSeconds)}`
+                    : 'Resend OTP'}
+                </button>
+                <button type="button" className="link-btn" onClick={() => setResetMode(false)}>
+                  Cancel
+                </button>
+              </div>
+
+              <button className="primary-btn" type="submit">
+                Reset Password
+              </button>
+            </form>
+          )}
 
           <div className="auth-footer">
             <Link to="/" className="ghost-btn">

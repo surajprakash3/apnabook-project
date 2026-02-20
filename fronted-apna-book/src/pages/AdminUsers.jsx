@@ -1,33 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import AdminSidebar from '../components/AdminSidebar';
+import api from '../lib/api.js';
+import { useAuth } from '../context/AuthContext.jsx';
 import './AdminUsers.css';
-
-const initialUsers = [
-  {
-    id: 1,
-    name: 'Asha Patel',
-    email: 'asha.patel@email.com',
-    role: 'Admin',
-    status: 'Active',
-    joined: 'Jan 18, 2026'
-  },
-  {
-    id: 2,
-    name: 'Miguel Santos',
-    email: 'miguel.s@email.com',
-    role: 'User',
-    status: 'Active',
-    joined: 'Jan 06, 2026'
-  },
-  {
-    id: 3,
-    name: 'Harper Blake',
-    email: 'harper.blake@email.com',
-    role: 'User',
-    status: 'Blocked',
-    joined: 'Dec 21, 2025'
-  }
-];
 
 const statusStyles = {
   Active: 'bg-[#d1fae5] text-[#107a4b]',
@@ -35,16 +10,45 @@ const statusStyles = {
 };
 
 const roleStyles = {
-  Admin: 'bg-[#e0e7ff] text-[#3730a3]',
-  User: 'bg-[#f1f5f9] text-[#334155]'
+  admin: 'bg-[#e0e7ff] text-[#3730a3]',
+  user: 'bg-[#f1f5f9] text-[#334155]',
+  seller: 'bg-[#fef3c7] text-[#b45309]'
+};
+
+const formatDate = (value) => {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleDateString(undefined, { month: 'short', day: '2-digit', year: 'numeric' });
 };
 
 export default function AdminUsers() {
-  const [users, setUsers] = useState(initialUsers);
+  const { token } = useAuth();
+  const [users, setUsers] = useState([]);
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('All');
   const [statusFilter, setStatusFilter] = useState('All');
   const [selectedUser, setSelectedUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  const loadUsers = useCallback(async () => {
+    if (!token) return;
+    setLoading(true);
+    setError('');
+    try {
+      const data = await api.get('/api/admin/users', { token });
+      setUsers(Array.isArray(data) ? data : []);
+    } catch (requestError) {
+      setError(requestError.message || 'Failed to load users');
+    } finally {
+      setLoading(false);
+    }
+  }, [token]);
+
+  useEffect(() => {
+    loadUsers();
+  }, [loadUsers]);
 
   const filteredUsers = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -54,24 +58,51 @@ export default function AdminUsers() {
         [user.name, user.email, user.role].some((field) =>
           field.toLowerCase().includes(query)
         );
-      const matchesRole = roleFilter === 'All' || user.role === roleFilter;
-      const matchesStatus = statusFilter === 'All' || user.status === statusFilter;
+      const matchesRole = roleFilter === 'All' || user.role === roleFilter.toLowerCase();
+      const matchesStatus =
+        statusFilter === 'All' ||
+        user.status?.toLowerCase() === statusFilter.toLowerCase();
       return matchesQuery && matchesRole && matchesStatus;
     });
   }, [users, search, roleFilter, statusFilter]);
 
-  const toggleBlock = (id) => {
+  const toggleBlock = async (user) => {
+    const shouldBlock = user.status !== 'Blocked';
     setUsers((prev) =>
-      prev.map((user) =>
-        user.id === id
-          ? { ...user, status: user.status === 'Active' ? 'Blocked' : 'Active' }
-          : user
+      prev.map((item) =>
+        item.id === user.id ? { ...item, status: shouldBlock ? 'Blocked' : 'Active' } : item
       )
     );
+
+    try {
+      const endpoint = shouldBlock ? 'block' : 'unblock';
+      const updated = await api.patch(`/api/admin/users/${user.id}/${endpoint}`, {}, { token });
+      setUsers((prev) => prev.map((item) => (item.id === user.id ? updated : item)));
+    } catch (requestError) {
+      setError(requestError.message || 'Failed to update user status');
+      loadUsers();
+    }
   };
 
-  const deleteUser = (id) => {
+  const deleteUser = async (id) => {
     setUsers((prev) => prev.filter((user) => user.id !== id));
+    try {
+      await api.delete(`/api/admin/users/${id}`, { token });
+    } catch (requestError) {
+      setError(requestError.message || 'Failed to delete user');
+      loadUsers();
+    }
+  };
+
+  const promoteUser = async (id) => {
+    setUsers((prev) => prev.map((user) => (user.id === id ? { ...user, role: 'admin' } : user)));
+    try {
+      const updated = await api.patch(`/api/admin/users/${id}/role`, { role: 'admin' }, { token });
+      setUsers((prev) => prev.map((user) => (user.id === id ? updated : user)));
+    } catch (requestError) {
+      setError(requestError.message || 'Failed to update role');
+      loadUsers();
+    }
   };
 
   const openProfile = (user) => {
@@ -100,8 +131,9 @@ export default function AdminUsers() {
             <button
               className="rounded-full border border-[#d9cfc6] px-4 py-2 text-sm font-semibold"
               type="button"
+              onClick={loadUsers}
             >
-              Export
+              Refresh
             </button>
             <button
               className="rounded-full bg-[#1d1b19] px-5 py-2 text-sm font-semibold text-white"
@@ -125,6 +157,17 @@ export default function AdminUsers() {
               </div>
             </div>
 
+            {loading && (
+              <div className="mb-4 rounded-2xl border border-[#efe5dc] bg-[#fffaf6] px-4 py-3 text-sm text-[#6f6861]">
+                Loading users...
+              </div>
+            )}
+            {error && (
+              <div className="mb-4 rounded-2xl border border-[#f4b4ad] bg-[#fff1ef] px-4 py-3 text-sm font-semibold text-[#a53f30]">
+                {error}
+              </div>
+            )}
+
             <div className="mb-5 flex flex-wrap items-center gap-3">
               <div className="flex flex-1 items-center gap-2 rounded-2xl border border-[#e6e9ef] bg-white px-4 py-2 shadow-sm">
                 <span className="text-sm text-[#94a3b8]">🔎</span>
@@ -142,8 +185,9 @@ export default function AdminUsers() {
                 className="rounded-2xl border border-[#e6e9ef] bg-white px-4 py-2 text-xs font-semibold text-[#64748b]"
               >
                 <option value="All">All roles</option>
-                <option value="Admin">Admin</option>
-                <option value="User">User</option>
+                <option value="admin">Admin</option>
+                <option value="user">User</option>
+                <option value="seller">Seller</option>
               </select>
               <select
                 value={statusFilter}
@@ -177,7 +221,7 @@ export default function AdminUsers() {
                       <td className="py-4 pr-4 font-semibold">{user.name}</td>
                       <td className="py-4 pr-4 text-[#6f6861]">{user.email}</td>
                       <td className="py-4 pr-4">
-                        <span className={`rounded-full px-3 py-1 text-xs font-semibold ${roleStyles[user.role]}`}>
+                        <span className={`rounded-full px-3 py-1 text-xs font-semibold ${roleStyles[user.role] || roleStyles.user}`}>
                           {user.role}
                         </span>
                       </td>
@@ -186,7 +230,7 @@ export default function AdminUsers() {
                           {user.status}
                         </span>
                       </td>
-                      <td className="py-4 pr-4 text-[#6f6861]">{user.joined}</td>
+                      <td className="py-4 pr-4 text-[#6f6861]">{formatDate(user.joined)}</td>
                       <td className="py-4 text-right">
                         <div className="flex justify-end gap-2">
                           <button
@@ -203,10 +247,19 @@ export default function AdminUsers() {
                                 : 'border-[#f4b4ad] text-[#b91c1c]'
                             }`}
                             type="button"
-                            onClick={() => toggleBlock(user.id)}
+                            onClick={() => toggleBlock(user)}
                           >
                             {user.status === 'Blocked' ? 'Unblock' : 'Block'}
                           </button>
+                          {user.role !== 'admin' && (
+                            <button
+                              className="rounded-full border border-[#d9cfc6] px-3 py-1 text-xs font-semibold"
+                              type="button"
+                              onClick={() => promoteUser(user.id)}
+                            >
+                              Promote
+                            </button>
+                          )}
                           <button
                             className="rounded-full border border-[#f4b4ad] px-3 py-1 text-xs font-semibold text-[#b91c1c]"
                             type="button"
@@ -254,7 +307,7 @@ export default function AdminUsers() {
               </div>
               <div className="rounded-xl border border-[#efe5dc] px-4 py-3">
                 <p className="text-xs uppercase tracking-[0.2em] text-[#a88874]">Joined</p>
-                <p className="text-sm font-semibold">{selectedUser.joined}</p>
+                <p className="text-sm font-semibold">{formatDate(selectedUser.joined)}</p>
               </div>
             </div>
             <div className="mt-6 flex flex-wrap items-center justify-end gap-3">

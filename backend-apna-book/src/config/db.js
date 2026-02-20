@@ -1,4 +1,5 @@
 const { MongoClient } = require('mongodb');
+const bcrypt = require('bcryptjs');
 
 let client;
 let database;
@@ -16,6 +17,28 @@ const connectDB = async () => {
   client = new MongoClient(uri);
   await client.connect();
   database = client.db(process.env.MONGO_DB_NAME || 'apnabook');
+
+  const adminEmail = (process.env.ADMIN_EMAIL).toLowerCase();
+  const adminPassword = process.env.ADMIN_PASSWORD;
+
+  if (adminEmail && adminPassword) {
+    const existingAdmin = await database.collection('users').findOne({ email: adminEmail });
+    if (!existingAdmin) {
+      const passwordHash = await bcrypt.hash(adminPassword, 10);
+      await database.collection('users').insertOne({
+        fullName: 'Admin User',
+        name: 'Admin',
+        email: adminEmail,
+        password: passwordHash,
+        role: 'admin',
+        status: 'Active',
+        isVerified: true,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      });
+      console.log(`Seeded admin user: ${adminEmail}`);
+    }
+  }
 
   await database.collection('products').createIndexes([
     { key: { category: 1 } },

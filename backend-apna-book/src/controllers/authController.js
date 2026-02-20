@@ -74,6 +74,84 @@ const createOtpRecord = async ({ db, email, type }) => {
   return otp;
 };
 
+const upsertPendingSignup = async ({ db, fullName, email, password }) => {
+  const passwordHash = await bcrypt.hash(password, 10);
+  const now = new Date();
+
+  await db.collection('pending_signups').updateOne(
+    { email },
+    {
+      $set: {
+        fullName,
+        email,
+        passwordHash,
+        updatedAt: now
+      },
+      $setOnInsert: {
+        createdAt: now
+      }
+    },
+    { upsert: true }
+  );
+};
+
+const createOrActivateUser = async ({ db, fullName, email, passwordHash }) => {
+  const existing = await db.collection('users').findOne({ email });
+
+  if (existing?.isVerified) {
+    return { conflict: true };
+  }
+
+  const now = new Date();
+
+  if (existing) {
+    await db.collection('users').updateOne(
+      { _id: existing._id },
+      {
+        $set: {
+          fullName,
+          name: fullName,
+          password: passwordHash,
+          role: existing.role || 'user',
+          status: 'Active',
+          isVerified: true,
+          updatedAt: now
+        }
+      }
+    );
+
+    return {
+      user: {
+        ...existing,
+        fullName,
+        name: fullName,
+        password: passwordHash,
+        role: existing.role || 'user',
+        status: 'Active',
+        isVerified: true,
+        updatedAt: now
+      }
+    };
+  }
+
+  const payload = {
+    fullName,
+    name: fullName,
+    email,
+    password: passwordHash,
+    role: 'user',
+    status: 'Active',
+    isVerified: true,
+    createdAt: now,
+    updatedAt: now
+  };
+  const result = await db.collection('users').insertOne(payload);
+
+  return {
+    user: { ...payload, _id: result.insertedId }
+  };
+};
+
 const getLatestActiveOtpRecord = async ({ db, email, type }) =>
   db
     .collection('otp_codes')
@@ -140,8 +218,9 @@ const requestRegisterOtp = async (req, res) => {
 
 const register = async (req, res) => {
   const db = req.app.locals.db;
-  const { name, email, password, otp } = req.body;
+  const { name, fullName, email, password, otp } = req.body;
   const normalizedEmail = email?.toLowerCase();
+  const normalizedFullName = (fullName || name || '').trim();
 
   if (!otp) {
     return res.status(400).json({ message: 'OTP is required' });
@@ -157,58 +236,101 @@ const register = async (req, res) => {
     return res.status(400).json({ message: otpResult.message });
   }
 
-  const existing = await db.collection('users').findOne({ email: normalizedEmail });
-  if (existing?.isVerified) {
+  const passwordHash = await bcrypt.hash(password, 10);
+  const created = await createOrActivateUser({
+    db,
+    fullName: normalizedFullName,
+    email: normalizedEmail,
+    passwordHash
+  });
+
+  if (created.conflict) {
     return res.status(409).json({ message: 'Email already registered' });
   }
 
-  const hashed = await bcrypt.hash(password, 10);
-  let user;
+  await db.collection('pending_signups').deleteOne({ email: normalizedEmail });
 
-  if (existing) {
-    const updatedAt = new Date();
-    await db.collection('users').updateOne(
-      { _id: existing._id },
-      {
-        $set: {
-          name,
-          password: hashed,
-          role: existing.role || 'user',
-          status: 'Active',
-          isVerified: true,
-          updatedAt
-        }
-      }
-    );
-    user = {
-      ...existing,
-      name,
-      password: hashed,
-      role: existing.role || 'user',
-      status: 'Active',
-      isVerified: true,
-      updatedAt
-    };
-  } else {
-    const payload = {
-      name,
-      email: normalizedEmail,
-      password: hashed,
-      role: 'user',
-      status: 'Active',
-      isVerified: true,
-      createdAt: new Date(),
-      updatedAt: new Date()
-    };
-    const result = await db.collection('users').insertOne(payload);
-    user = { ...payload, _id: result.insertedId };
-  }
+  const user = created.user;
 
   const token = signToken(user);
   return res.status(201).json({
     message: 'Account created successfully',
     token,
-    user: { id: user._id, name: user.name, email: user.email, role: user.role }
+    user: { id: user._id, name: user.name, fullName: user.fullName, email: user.email, role: user.role }
+  });
+};
+
+const requestSignupOtp = async (req, res) => {
+  const db = req.app.locals.db;
+  const fullName = (req.body.fullName || req.body.name || '').trim();
+  const email = req.body.email?.toLowerCase();
+  const password = req.body.password;
+
+  if (!fullName || !email || !password) {
+    return res.status(400).json({ message: 'fullName, email and password are required' });
+  }
+
+  const existing = await db.collection('users').findOne({ email });
+  if (existing?.isVerified) {
+    return res.status(409).json({ message: 'Email already registered' });
+  }
+
+  const activeRecord = await getLatestActiveOtpRecord({ db, email, type: 'register' });
+  if (activeRecord?.expiresAt && activeRecord.expiresAt.getTime() > Date.now()) {
+    const retryAfterSeconds = Math.ceil((activeRecord.expiresAt.getTime() - Date.now()) / 1000);
+    return res.status(429).json({
+      message: 'OTP already sent. Request a new OTP after 5 minutes.',
+      retryAfterSeconds
+    });
+  }
+
+  await upsertPendingSignup({ db, fullName, email, password });
+
+  const otp = await createOtpRecord({ db, email, type: 'register' });
+  await sendOtpEmail({ email, otp, purpose: 'verify' });
+
+  return res.json({ message: 'OTP sent to your email' });
+};
+
+const verifySignupOtp = async (req, res) => {
+  const db = req.app.locals.db;
+  const email = req.body.email?.toLowerCase();
+  const otp = req.body.otp;
+
+  if (!email || !otp) {
+    return res.status(400).json({ message: 'email and otp are required' });
+  }
+
+  const otpResult = await verifyOtpRecord({ db, email, type: 'register', otp });
+  if (!otpResult.ok) {
+    return res.status(400).json({ message: otpResult.message });
+  }
+
+  const pending = await db.collection('pending_signups').findOne({ email });
+  if (!pending) {
+    return res.status(400).json({ message: 'No signup request found. Please request OTP again.' });
+  }
+
+  const created = await createOrActivateUser({
+    db,
+    fullName: pending.fullName,
+    email,
+    passwordHash: pending.passwordHash
+  });
+
+  if (created.conflict) {
+    return res.status(409).json({ message: 'Email already registered' });
+  }
+
+  await db.collection('pending_signups').deleteOne({ email });
+
+  const user = created.user;
+  const token = signToken(user);
+
+  return res.status(201).json({
+    message: 'Account created successfully',
+    token,
+    user: { id: user._id, name: user.name, fullName: user.fullName, email: user.email, role: user.role }
   });
 };
 
@@ -279,6 +401,67 @@ const requestLoginOtp = async (req, res) => {
   return res.json({ message: 'OTP sent to your email' });
 };
 
+const requestPasswordResetOtp = async (req, res) => {
+  const db = req.app.locals.db;
+  const email = req.body.email?.toLowerCase();
+
+  if (!email) {
+    return res.status(400).json({ message: 'Email is required' });
+  }
+
+  const user = await db.collection('users').findOne({ email });
+  if (!user) {
+    return res.status(404).json({ message: 'User not found' });
+  }
+
+  const activeRecord = await getLatestActiveOtpRecord({ db, email, type: 'reset' });
+  if (activeRecord?.expiresAt && activeRecord.expiresAt.getTime() > Date.now()) {
+    const retryAfterSeconds = Math.ceil((activeRecord.expiresAt.getTime() - Date.now()) / 1000);
+    return res.status(429).json({
+      message: 'OTP already sent. Request a new OTP after 5 minutes.',
+      retryAfterSeconds
+    });
+  }
+
+  const otp = await createOtpRecord({ db, email, type: 'reset' });
+  await sendOtpEmail({ email, otp, purpose: 'verify' });
+
+  return res.json({ message: 'Password reset OTP sent to your email' });
+};
+
+const resetPasswordWithOtp = async (req, res) => {
+  const db = req.app.locals.db;
+  const email = req.body.email?.toLowerCase();
+  const otp = req.body.otp;
+  const newPassword = req.body.newPassword;
+
+  if (!email || !otp || !newPassword) {
+    return res.status(400).json({ message: 'email, otp and newPassword are required' });
+  }
+
+  if (String(newPassword).length < 6) {
+    return res.status(400).json({ message: 'Password must be at least 6 characters' });
+  }
+
+  const user = await db.collection('users').findOne({ email });
+  if (!user) {
+    return res.status(404).json({ message: 'User not found' });
+  }
+
+  const otpResult = await verifyOtpRecord({ db, email, type: 'reset', otp });
+  if (!otpResult.ok) {
+    return res.status(400).json({ message: otpResult.message });
+  }
+
+  const passwordHash = await bcrypt.hash(newPassword, 10);
+  await db.collection('users').updateOne(
+    { _id: user._id },
+    { $set: { password: passwordHash, updatedAt: new Date() } }
+  );
+
+  return res.json({ message: 'Password updated successfully. Please log in.' });
+};
+
 const verifyLoginOtp = async (req, res) => {
   const db = req.app.locals.db;
   const { email, otp } = req.body;
@@ -317,7 +500,11 @@ const me = async (req, res) => {
 module.exports = {
   register,
   requestRegisterOtp,
+  requestSignupOtp,
+  verifySignupOtp,
   login,
+  requestPasswordResetOtp,
+  resetPasswordWithOtp,
   me,
   verifyEmailOtp,
   requestLoginOtp,
