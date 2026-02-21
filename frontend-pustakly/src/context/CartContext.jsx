@@ -12,7 +12,7 @@ export const CartContext = createContext({
 
 export function CartProvider({ children }) {
   const [items, setItems] = useState([]);
-    const token = localStorage.getItem('token');
+  const { token } = useAuth();
   const GUEST_CART_KEY = 'pustakly_cart';
 
   const normalizePrice = (value) => {

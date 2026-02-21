@@ -299,23 +299,29 @@ export default function BookList() {
                     rating={Number(product.rating || 0)}
                     tag={product.category}
                     linkTo={`/marketplace/${String(product._id || product.id)}`}
-                    onAddToCart={() => {
+                    onAddToCart={async () => {
                       if (!token) {
                         setToastMsg('Please login first to add items to cart');
                         setTimeout(() => {
                           setToastMsg('');
-                          // Store intended path for redirect after login
                           localStorage.setItem('pustakly_redirect_after_login', window.location.pathname + window.location.search);
                           window.location.href = '/login';
                         }, 1500);
                         return;
                       }
-                      addItem({
-                        ...product,
-                        id: String(product._id || product.id),
-                        quantity: 1,
-                        price: `$${Number(product.price || 0).toFixed(2)}`
-                      });
+                      try {
+                        await addItem({
+                          ...product,
+                          id: String(product._id || product.id),
+                          quantity: 1,
+                          price: Number(product.price || 0)
+                        });
+                        setToastMsg('Added to cart!');
+                        setTimeout(() => setToastMsg(''), 1500);
+                      } catch (err) {
+                        setToastMsg(err.message || 'Failed to add to cart');
+                        setTimeout(() => setToastMsg(''), 2000);
+                      }
                     }}
                     disableAdd={!token}
                   />
