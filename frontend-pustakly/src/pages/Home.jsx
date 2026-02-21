@@ -4,6 +4,8 @@ import Hero from '../components/Hero.jsx';
 import CategorySection from '../components/CategorySection.jsx';
 import Footer from '../components/Footer.jsx';
 import { useContext, useEffect, useState } from 'react';
+import { useAuth } from '../context/AuthContext.jsx';
+import Toast from '../components/Toast.jsx';
 import { Link } from 'react-router-dom';
 import { CartContext } from '../context/CartContext.jsx';
 import { useMarketplace } from '../context/MarketplaceContext.jsx';
@@ -27,10 +29,12 @@ const RatingStars = ({ rating = 0 }) => {
 
 export default function Home() {
   const { addItem } = useContext(CartContext);
+  const { token } = useAuth();
   const { listings } = useMarketplace();
   const [trending, setTrending] = useState([]);
   const [trendingLoading, setTrendingLoading] = useState(true);
   const [trendingError, setTrendingError] = useState('');
+  const [toastMsg, setToastMsg] = useState('');
 
   useEffect(() => {
     let active = true;
@@ -161,14 +165,23 @@ export default function Home() {
                     <button
                       type="button"
                       className="rounded-full bg-[#1d1b19] px-4 py-2 text-xs font-semibold text-white"
-                      onClick={() =>
+                      onClick={() => {
+                        if (!token) {
+                          setToastMsg('Please login first');
+                          setTimeout(() => {
+                            setToastMsg('');
+                            localStorage.setItem('pustakly_redirect_after_login', window.location.pathname + window.location.search);
+                            window.location.href = '/login';
+                          }, 1200);
+                          return;
+                        }
                         addItem({
                           ...item,
                           id: String(item._id || item.id),
                           price: formatPrice(item.price),
                           quantity: 1
-                        })
-                      }
+                        });
+                      }}
                     >
                       Add to Cart
                     </button>
@@ -214,7 +227,18 @@ export default function Home() {
                   <button
                     type="button"
                     className="rounded-full bg-[#1d1b19] px-4 py-2 text-xs font-semibold text-white"
-                    onClick={() => addItem({ ...item, price: `$${Number(item.price || 0).toFixed(2)}`, quantity: 1 })}
+                    onClick={() => {
+                      if (!token) {
+                        setToastMsg('Please login first');
+                        setTimeout(() => {
+                          setToastMsg('');
+                          localStorage.setItem('pustakly_redirect_after_login', window.location.pathname + window.location.search);
+                          window.location.href = '/login';
+                        }, 1200);
+                        return;
+                      }
+                      addItem({ ...item, price: `$${Number(item.price || 0).toFixed(2)}`, quantity: 1 });
+                    }}
                   >
                     Add to Cart
                   </button>
@@ -374,6 +398,7 @@ export default function Home() {
           </div>
         </section>
       </main>
+      <Toast message={toastMsg} onClose={() => setToastMsg('')} />
       <Footer />
     </div>
   );
