@@ -307,9 +307,11 @@ const verifySignupOtp = async (req, res) => {
 
 const login = async (req, res) => {
   const { email, password } = req.body;
-  const user = await User.findOne({ email: email.toLowerCase() });
+    console.log('[LOGIN] Using DB:', mongoose.connection.name);
+    const user = await User.findOne({ email: email.toLowerCase() });
   if (!user) {
-    return res.status(401).json({ message: 'Invalid credentials' });
+      console.log('[LOGIN] No user found for email:', email, 'in DB:', mongoose.connection.name);
+      return res.status(401).json({ message: 'Invalid credentials' });
   }
   if (!user.isVerified) {
     return res.status(403).json({ message: 'Email not verified' });

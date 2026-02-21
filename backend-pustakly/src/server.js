@@ -45,10 +45,13 @@ app.use(errorHandler);
 
 const PORT = process.env.PORT || 5000;
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/apnabook';
+const MONGO_DB_NAME = process.env.MONGO_DB_NAME || 'apnabook';
 
-mongoose.connect(MONGO_URI)
+mongoose.connect(MONGO_URI, { dbName: MONGO_DB_NAME })
   .then(() => {
-    console.log('MongoDB connected');
+    console.log('MongoDB connected to DB:', MONGO_DB_NAME);
+    // Set app.locals.db to native MongoDB database object
+    app.locals.db = mongoose.connection.db;
     app.listen(PORT, () => {
       console.log(`Server running on port ${PORT}`);
     });
